@@ -16,8 +16,27 @@
   #include <emscripten/emscripten.h>
   #include <emscripten/html5.h>
   #include <emscripten/bind.h>
-#else
+#elif __has_include(<sys/random.h>)
   #include <sys/random.h>
+#else
+  //#warning "Non-emscripten build has no getrandom. Using /dev/random instead."
+  #pragma message "Warning: Non-emscripten build has no getrandom. Using /dev/random instead."
+
+  #include <fcntl.h>
+
+  std::int64_t getrandom(void* buf, std::size_t buflen, [[maybe_unused]] std::uint32_t flags)
+  {
+    const auto fd = ::open("/dev/random", O_CLOEXEC);
+
+    if (fd < 0)
+      return -1;
+
+    const std::int64_t bytes = ::read(fd, buf, buflen);
+
+    ::close(fd);
+
+    return bytes;
+  }
 #endif
 
 // This file provides various utilities to aid (psuedo)random number generation
@@ -396,7 +415,7 @@ inline void raw_fill(const std::span<std::byte, Extent> buf)
   {
     for (auto it = buf.begin(); it != buf.end(); )
     {
-      auto result = getrandom(&(*it), buf.end() - it, 0);
+      auto result = getrandom(&(*it), static_cast<std::size_t>(buf.end() - it), 0);
 
       if (result == -1)
       {
